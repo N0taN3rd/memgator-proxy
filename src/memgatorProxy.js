@@ -3,10 +3,11 @@ import proxy from 'express-http-proxy'
 import express from 'express'
 import S from 'string'
 import md5 from 'md5'
+import path from 'path'
 import fs from 'fs-extra'
 import moment from 'moment'
 import winston from 'winston'
-import nedb from 'nedb'
+import Datastore from 'nedb'
 require('pretty-error').start()
 
 /*
@@ -21,6 +22,13 @@ require('pretty-error').start()
  */
 
 let app = express()
+
+const db = new Datastore({
+  filename: path.join('dbs', 'url-hash-count.db'),
+  autoload: true
+})
+
+db.loadDatabase()
 
 const logger = new (winston.Logger)({
   transports: [
@@ -57,10 +65,10 @@ app.all('*', proxy('http://localhost:9000', {
     if (url.contains('timemap') && req.method === 'GET') {
       let now = moment().format('YYYYMMDDHHmmss')
       let urlO = pathRE.exec(url.s)
-      console.log(urlO[1])
-      let hash = md5(urlO[1])
+      let hash = md5(urlO[ 1 ])
+      console.log(urlO[ 1 ])
       let memcount = rsp.headers[ 'x-memento-count' ]
-      logger.info(`got timemap request urlHash:count, ${hash}:${memcount}`)
+      logger.info(`got timemap request url:count, ${urlO[ 1 ]}:${memcount}`)
       var fileType
       switch (rsp.headers[ 'content-type' ]) {
         case 'application/json':
@@ -87,6 +95,82 @@ app.all('*', proxy('http://localhost:9000', {
           })
         }
       })
+      let id = { _id: urlO[ 1 ] }
+      db.find(id, (errFind, docs) => {
+          if (errFind) {
+            logger.error('finding url[%s] failed %s', url, errFind)
+          } else {
+            if (docs.length === 0) {
+              let insertMe = {
+                _id: urlO[ 1 ],
+                hash,
+                mementoCount: [ { count: memcount, date: now } ],
+                statusCodes: [
+                  {
+                    code: statusCode,
+                    date: now
+                  }
+                ]
+
+              }
+              db.insert(insertMe, (insertError, newDoc) => {
+                if (insertError) {
+                  logger.error('inserting new url[%s] failed %s', url, errFind)
+                }
+              })
+            } else {
+              let update = {
+                $push: {
+                  mementoCount: { count: memcount, date: now },
+                  statusCodes: {
+                    code: statusCode,
+                    date: now
+                  }
+                }
+              }
+              db.update(id, update,{ upsert: true }, (errUpdate, numAffected, affectedDocuments, upsert) => {
+                console.log(errUpdate)
+                console.log(numAffected)
+                console.log(affectedDocuments)
+                console.log(upsert)
+                if (errUpdate) {
+                  logger.error('updating mementocount timemap for url[%s] failed %s', url, errFind)
+                }
+              })
+            }
+          }
+        }
+      )
+      // db.urlHash.find({ _id: hash }, (errUHF, docs) => {
+      //   if (errUHF) {
+      //     logger.error('finding hash[%s] -> url[%s] failed %s', hash, url, errUHF)
+      //   } else {
+      //     if (docs.length === 0) {
+      //       db.urlHash.insert({ _id: hash, url: urlO[ 1 ] }, (err, newDoc) => {
+      //         if (err) {
+      //           logger.error('inserting hash[%s] -> url[%s] failed %s', hash, url, err)
+      //         } else {
+      //           let toBeInserted = { _id: hash, count: [ { count: memcount, date: m.format('YYYYMMDD') } ] }
+      //           db.mementoCount.insert(toBeInserted, (err, newDoc))
+      //         }
+      //       })
+      //     }
+      //   }
+      // })
+      // db.mementoCount.find({ _id: hash }, (err, docs) => {
+      //   if (docs.length === 0) {
+      //
+      //   } else {
+      //     db.mementoCount.update({ _id: hash },
+      //       { $push: { mementoCount: { count: memcount, date: m.format('YYYYMMDD') } } },
+      //       (err, numAffected, affectedDocuments, upsert) => {
+      //         console.log(err)
+      //         console.log(numAffected)
+      //         console.log(affectedDocuments)
+      //         console.log(upsert)
+      //       })
+      //   }
+      // })
     }
   },
   preserveHostHdr: true
