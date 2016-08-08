@@ -11,13 +11,15 @@ import Datastore from 'nedb'
 require('pretty-error').start()
 
 const argv = require('yargs')
-  .usage('Usage: $0 -host [url] -port [port#]')
-  .demand([ 'host', 'port' ])
-  .alias('h', 'host')
+  .usage('Usage: $0 --upstream [url] --port [port#]')
+  .demand([ 'upstream', 'port' ])
+  .alias('u', 'upstream')
   .alias('p', 'port')
   .number('port')
-  .string('host')
-  .describe('host', 'the host name to proxy')
+  .string('upstream')
+  .default('upstream', 'localhost:80')
+  .default('port', 8008)
+  .describe('upstream', 'what we are to proxy')
   .describe('port', 'the port we are listening on')
   .help()
   .argv
@@ -25,27 +27,29 @@ const argv = require('yargs')
 let app = express()
 
 let db = new Datastore({
-  filename: path.join('dbs', 'url-hash-count.db'),
+  filename: path.join('data/dbs', 'url-hash-count.db'),
   autoload: true
 })
+
+db.persistence.setAutocompactionInterval()
 
 const logger = new (winston.Logger)({
   transports: [
     new (winston.transports.File)({
       name: 'info-file',
-      filename: 'logs/infos.log',
+      filename: 'data/logs/infos.log',
       level: 'info'
     }),
     new (winston.transports.File)({
       name: 'error-file',
-      filename: 'logs/errors.log',
+      filename: 'data/logs/errors.log',
       level: 'error'
     }),
     new (winston.transports.Console)()
   ],
   exceptionHandlers: [
     new winston.transports.File({
-      filename: 'logs/exceptions.log',
+      filename: 'data/logs/exceptions.log',
       handleExceptions: true,
       humanReadableUnhandledException: true
     })
@@ -92,7 +96,7 @@ app.all('*', proxy(host, {
         default:
           fileType = 'txt'
       }
-      let path = `timemaps/${hash}/${statusCode}`
+      let path = `data/timemaps/${hash}/${statusCode}`
       fs.ensureDir(path, error => {
         if (error) {
           logger.error(`ensuring dir timemap error for hash[${hash}] %s`, error)
