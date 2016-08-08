@@ -10,4 +10,4 @@ RUN npm install
 
 RUN node --harmony node_modules/gulp/bin/gulp.js --color --gulpfile gulpfile.babel.js build
 
-RUN node bin/memgatorProxy --host --port
+RUN node bin/memgatorProxy.js --host --port

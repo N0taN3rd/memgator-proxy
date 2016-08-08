@@ -62,6 +62,8 @@ const pathRE = new RegExp('/timemap/(?:(?:json)|(?:link)|(?:cdxj))/(.+)')
 let host = argv.host || argv.h
 let port = argv.port || argv.p
 
+console.log(`Starting the memgator proxy for host[${host}] listening on port[${port}]`)
+
 app.all('*', proxy(host, {
   intercept(rsp, data, req, res, callback) {
     console.log('intercept')
