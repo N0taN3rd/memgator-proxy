@@ -12,7 +12,6 @@ require('pretty-error').start()
 
 const argv = require('yargs')
   .usage('Usage: $0 --upstream [url] --port [port#]')
-  .demand([ 'upstream', 'port' ])
   .alias('u', 'upstream')
   .alias('p', 'port')
   .number('port')
@@ -20,6 +19,7 @@ const argv = require('yargs')
   .describe('upstream', 'what we are to proxy')
   .describe('port', 'the port we are listening on')
   .help()
+  .demand([ 'upstream', 'port','p','u' ])
   .argv
 
 let app = express()
@@ -30,6 +30,8 @@ let db = new Datastore({
 })
 
 db.persistence.setAutocompactionInterval(300000)
+
+console.log(argv)
 
 const logger = new (winston.Logger)({
   transports: [
@@ -69,11 +71,13 @@ console.log(`Starting the memgator proxy for upstream[${upstream}] listening on 
 app.all('*', proxy(upstream, {
   intercept(rsp, data, req, res, callback) {
     console.log('intercept')
+    console.log(res)
+    res.setHeader('Via', 'ws-dl memgator proxy')
     callback(null, data)
     let statusCode = rsp.statusCode
     console.log(req.url)
     let urlT = S(req.url)
-    if (urlT.contains('timemap') && req.method === 'GET') {
+    if (urlT.startsWith('/timemap') && req.method === 'GET') {
       let now = moment().format('YYYYMMDDHHmmss')
       let urlO = pathRE.exec(urlT.s)
       let hash = md5(urlO[ 1 ])
