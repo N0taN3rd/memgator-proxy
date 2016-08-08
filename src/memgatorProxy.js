@@ -31,7 +31,7 @@ let db = new Datastore({
   autoload: true
 })
 
-db.persistence.setAutocompactionInterval()
+db.persistence.setAutocompactionInterval(300000)
 
 const logger = new (winston.Logger)({
   transports: [
@@ -63,12 +63,12 @@ const pathRE = new RegExp('/timemap/(?:(?:json)|(?:link)|(?:cdxj))/(.+)')
 //memgator port 80,
 //'http://localhost:9000'
 
-let host = argv.host || argv.h
+let upstream = argv.upstream || argv.u
 let port = argv.port || argv.p
 
-console.log(`Starting the memgator proxy for host[${host}] listening on port[${port}]`)
+console.log(`Starting the memgator proxy for upstream[${upstream}] listening on port[${port}]`)
 
-app.all('*', proxy(host, {
+app.all('*', proxy(upstream, {
   intercept(rsp, data, req, res, callback) {
     console.log('intercept')
     callback(null, data)

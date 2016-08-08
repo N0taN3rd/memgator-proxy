@@ -25,7 +25,7 @@
   },
   "scripts": {
     "start": "node ./bin/memgatorProxy",
-    "start2": "babel-node src/memgatorProxy --h http://localhost:9000 --p 8008"
+    "start2": "babel-node src/memgatorProxy --u http://localhost:9000 --p 8008"
   },
   "devDependencies": {
     "babel-cli": "^6.11.4",
