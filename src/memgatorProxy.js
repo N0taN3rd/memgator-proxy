@@ -59,17 +59,15 @@ function buildProxy (upstream,database,log) {
   app.use(haltOnTimedout)
   app.all('*', proxy(upstream, {
     intercept(rsp, data, req, res, callback) {
-      console.log('intercept')
+      console.log('intercept',req.url)
       res.setHeader('Via', 'ws-dl memgator proxy')
       callback(null, data)
       let statusCode = rsp.statusCode
-      console.log(req.url)
       let urlT = S(req.url)
       if (urlT.startsWith('/timemap') && req.method === 'GET') {
         let now = moment().format('YYYYMMDDHHmmss')
         let urlO = pathRE.exec(urlT.s)
         let hash = md5(urlO[ 1 ])
-        console.log(urlO[ 1 ])
         let memcount = rsp.headers[ 'x-memento-count' ]
         log.info(`got timemap request url:count, ${urlO[ 1 ]}:${memcount}`)
         var fileType
@@ -157,10 +155,10 @@ console.log(`Starting the memgator proxy2 for upstream[${upstream2}] listening o
 
 
 
-let proxyS1 = http.createServer(buildProxy(upstream1,db, logger)).withShutdown()
+let proxyS1 = http.createServer(buildProxy(upstream1, db, logger)).withShutdown()
 proxyS1.listen(port1)
 
-let proxyS2 = http.createServer(buildProxy(upstream2,db, logger)).withShutdown()
+let proxyS2 = http.createServer(buildProxy(upstream2, db, logger)).withShutdown()
 proxyS2.listen(port2)
 
 process.on('SIGTERM', () => {
