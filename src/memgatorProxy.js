@@ -8,17 +8,16 @@ import fs from 'fs-extra'
 import moment from 'moment'
 import winston from 'winston'
 import Datastore from 'nedb'
-// import timeout from 'connect-timeout'
+import timeout from 'connect-timeout'
 require('pretty-error').start()
 require('http-shutdown').extend()
 
-
-function haltOnTimedout(req, res, next){
+function haltOnTimedout (req, res, next) {
   if (!req.timedout) next()
 }
 let app = express()
-// app.use(timeout('300s'))
-// app.use(haltOnTimedout)
+app.use(timeout('300s'))
+app.use(haltOnTimedout)
 
 let db = new Datastore({
   filename: path.join('data/dbs', 'url-hash-count.db'),
@@ -26,7 +25,6 @@ let db = new Datastore({
 })
 
 db.persistence.setAutocompactionInterval(300000)
-
 
 const logger = new (winston.Logger)({
   transports: [
@@ -58,7 +56,7 @@ const pathRE = new RegExp('/timemap/(?:(?:json)|(?:link)|(?:cdxj))/(.+)')
 //memgator port 80,
 //'http://localhost:9000'
 
-let upstream = 'http://memgator.cs.odu.edu:1209'
+let upstream = 'http://localhost:9000'//'http://memgator.cs.odu.edu:1209'
 let port = 8008
 
 console.log(`Starting the memgator proxy for upstream[${upstream}] listening on port[${port}]`)
