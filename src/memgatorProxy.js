@@ -69,7 +69,8 @@ app.all('*', proxy(upstream, {
     console.log(req.url)
     let urlT = S(req.url)
     if (urlT.startsWith('/timemap') && req.method === 'GET') {
-      let now = moment().format('YYYYMMDDHHmmss')
+      let now = moment()
+      let nowTime = now.format('YYYYMMDDHHmmss')
       let urlO = pathRE.exec(urlT.s)
       let hash = md5(urlO[ 1 ])
       console.log(urlO[ 1 ])
@@ -89,12 +90,12 @@ app.all('*', proxy(upstream, {
         default:
           fileType = 'txt'
       }
-      let path = `data/timemaps/${hash}/${statusCode}`
+      let path = `data/timemaps/${hash}/${now.format('YYYYMMDD')}/${statusCode}`
       fs.ensureDir(path, error => {
         if (error) {
           logger.error(`ensuring dir timemap error for hash[${hash}] %s`, error)
         } else {
-          fs.writeFile(`${path}/${now}-timemap.${fileType}`, data, 'utf8', err => {
+          fs.writeFile(`${path}/${nowTime}-timemap.${fileType}`, data, 'utf8', err => {
             if (err) {
               logger.error(`writting timemap error for hash[${hash}] %s`, err)
             }
