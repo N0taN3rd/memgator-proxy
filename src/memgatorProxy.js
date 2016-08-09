@@ -64,6 +64,11 @@ app.all('*', proxy(upstream, {
   intercept(rsp, data, req, res, callback) {
     console.log('intercept')
     res.setHeader('Via', 'ws-dl memgator proxy')
+    var ip = req.headers['x-forwarded-for'] ||
+      req.connection.remoteAddress ||
+      req.socket.remoteAddress ||
+      req.connection.socket.remoteAddress
+    console.log(ip)
     callback(null, data)
     let statusCode = rsp.statusCode
     console.log(req.url)
@@ -90,12 +95,12 @@ app.all('*', proxy(upstream, {
         default:
           fileType = 'txt'
       }
-      let path = `data/timemaps/${hash}/${now.format('YYYYMMDD')}/${statusCode}`
+      let path = `data/timemaps/${now.format('YYYYMMDD')}`
       fs.ensureDir(path, error => {
         if (error) {
           logger.error(`ensuring dir timemap error for hash[${hash}] %s`, error)
         } else {
-          fs.writeFile(`${path}/${nowTime}-timemap.${fileType}`, data, 'utf8', err => {
+          fs.writeFile(`${path}/${hash}-${ip}-${nowTime}-${statusCode}-timemap.${fileType}`, data, 'utf8', err => {
             if (err) {
               logger.error(`writting timemap error for hash[${hash}] %s`, err)
             }
