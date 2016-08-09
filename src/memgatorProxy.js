@@ -9,7 +9,6 @@ import moment from 'moment'
 import winston from 'winston'
 import Datastore from 'nedb'
 import timeout from 'connect-timeout'
-require('pretty-error').start()
 require('http-shutdown').extend()
 
 function haltOnTimedout (req, res, next) {
@@ -56,7 +55,7 @@ const pathRE = new RegExp('/timemap/(?:(?:json)|(?:link)|(?:cdxj))/(.+)')
 //memgator port 80,
 //'http://localhost:9000'
 
-let upstream = 'http://localhost:9000'//'http://memgator.cs.odu.edu:1209'
+let upstream = 'http://memgator.cs.odu.edu:1209'
 let port = 8008
 
 console.log(`Starting the memgator proxy for upstream[${upstream}] listening on port[${port}]`)
