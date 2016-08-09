@@ -27,7 +27,6 @@ let db = new Datastore({
 
 db.persistence.setAutocompactionInterval(300000)
 
-console.log(argv)
 
 const logger = new (winston.Logger)({
   transports: [
