@@ -13,18 +13,6 @@ require('pretty-error').start()
 require('http-shutdown').extend()
 
 
-const argv = require('yargs')
-  .usage('Usage: $0 --upstream [url] --port [port#]')
-  .alias('u', 'upstream')
-  .alias('p', 'port')
-  .number('port')
-  .string('upstream')
-  .describe('upstream', 'what we are to proxy')
-  .describe('port', 'the port we are listening on')
-  .help()
-  .demand([ 'upstream', 'port','p','u' ])
-  .argv
-
 function haltOnTimedout(req, res, next){
   if (!req.timedout) next()
 }
@@ -71,8 +59,8 @@ const pathRE = new RegExp('/timemap/(?:(?:json)|(?:link)|(?:cdxj))/(.+)')
 //memgator port 80,
 //'http://localhost:9000'
 
-let upstream = argv.upstream || argv.u
-let port = argv.port || argv.p
+let upstream = 'http://memgator.cs.odu.edu:1209'
+let port = 8008
 
 console.log(`Starting the memgator proxy for upstream[${upstream}] listening on port[${port}]`)
 
@@ -158,6 +146,8 @@ app.all('*', proxy(upstream, {
   },
   preserveHostHdr: true
 }))
+
+//http://memgator.cs.odu.edu:1208 --p 8008
 
 let proxyS = http.createServer(app).withShutdown()
 proxyS.listen(port)
