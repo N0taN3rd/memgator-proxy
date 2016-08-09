@@ -8,21 +8,17 @@ import fs from 'fs-extra'
 import moment from 'moment'
 import winston from 'winston'
 import Datastore from 'nedb'
+import timeout from 'connect-timeout'
 require('pretty-error').start()
+require('http-shutdown').extend()
 
-const argv = require('yargs')
-  .usage('Usage: $0 --upstream [url] --port [port#]')
-  .alias('u', 'upstream')
-  .alias('p', 'port')
-  .number('port')
-  .string('upstream')
-  .describe('upstream', 'what we are to proxy')
-  .describe('port', 'the port we are listening on')
-  .help()
-  .demand([ 'upstream', 'port','p','u' ])
-  .argv
 
-let app = express()
+const pathRE = new RegExp('/timemap/(?:(?:json)|(?:link)|(?:cdxj))/(.+)')
+
+function haltOnTimedout(req, res, next){
+  if (!req.timedout) next()
+}
+
 
 let db = new Datastore({
   filename: path.join('data/dbs', 'url-hash-count.db'),
@@ -31,7 +27,6 @@ let db = new Datastore({
 
 db.persistence.setAutocompactionInterval(300000)
 
-console.log(argv)
 
 const logger = new (winston.Logger)({
   transports: [
@@ -58,113 +53,134 @@ const logger = new (winston.Logger)({
 
 logger.exitOnError = false
 
-const pathRE = new RegExp('/timemap/(?:(?:json)|(?:link)|(?:cdxj))/(.+)')
+function buildProxy (upstream,database,log) {
+  let app = express()
+  app.use(timeout('300s'))
+  app.use(haltOnTimedout)
+  app.all('*', proxy(upstream, {
+    intercept(rsp, data, req, res, callback) {
+      console.log('intercept')
+      res.setHeader('Via', 'ws-dl memgator proxy')
+      callback(null, data)
+      let statusCode = rsp.statusCode
+      console.log(req.url)
+      let urlT = S(req.url)
+      if (urlT.startsWith('/timemap') && req.method === 'GET') {
+        let now = moment().format('YYYYMMDDHHmmss')
+        let urlO = pathRE.exec(urlT.s)
+        let hash = md5(urlO[ 1 ])
+        console.log(urlO[ 1 ])
+        let memcount = rsp.headers[ 'x-memento-count' ]
+        log.info(`got timemap request url:count, ${urlO[ 1 ]}:${memcount}`)
+        var fileType
+        switch (rsp.headers[ 'content-type' ]) {
+          case 'application/json':
+            fileType = 'json'
+            break
+          case 'application/link-format':
+            fileType = 'link'
+            break
+          case 'application/cdxj+ors':
+            fileType = 'cdxj'
+            break
+          default:
+            fileType = 'txt'
+        }
+        let path = `data/timemaps/${hash}/${statusCode}`
+        fs.ensureDir(path, error => {
+          if (error) {
+            log.error(`ensuring dir timemap error for hash[${hash}] %s`, error)
+          } else {
+            fs.writeFile(`${path}/${now}-timemap.${fileType}`, data, 'utf8', err => {
+              if (err) {
+                log.error(`writting timemap error for hash[${hash}] %s`, err)
+              }
+            })
+          }
+        })
+        let url = urlO[ 1 ]
+        let id = { url }
+        database.find(id, (errFind, docs) => {
+            if (errFind) {
+              log.error('finding url[%s] failed %s', url, errFind)
+            } else {
+              if (docs.length === 0) {
+                console.log('docs.length is zero inserting new document')
+                let insertMe = {
+                  url,
+                  hash,
+                  mementoCount: [ { count: memcount, date: now } ],
+                }
+                db.insert(insertMe, (insertError, newDoc) => {
+                  if (insertError) {
+                    log.error('inserting new url[%s] failed %s', url, errFind)
+                  } else {
+                    console.log('insert worked ', newDoc)
+                  }
+                })
+              } else {
+                let update = {
+                  $push: {
+                    mementoCount: { count: memcount, date: now }
+                  }
+                }
+                db.update(id, update, { upsert: false }, (errUpdate, numAffected, affectedDocuments, upsert) => {
+                  if (errUpdate) {
+                    log.error('updating mementocount timemap for url[%s] failed %s', url, errFind)
+                  } else {
+                    console.log('updating db worked ', numAffected, affectedDocuments)
+                  }
+                })
+              }
+            }
+          }
+        )
+      }
+    },
+    preserveHostHdr: true
+  }))
+  return app
+
+}
+
 
 //memgator port 80,
 //'http://localhost:9000'
 
-let upstream = argv.upstream || argv.u
-let port = argv.port || argv.p
+let upstream1 = 'http://memgator.cs.odu.edu:1208'
+let upstream2 = 'http://memgator.cs.odu.edu:80'
+let port1 = 8008
+let port2 = 8080
 
-console.log(`Starting the memgator proxy for upstream[${upstream}] listening on port[${port}]`)
+console.log(`Starting the memgator proxy1 for upstream[${upstream1}] listening on port[${port1}]`)
+console.log(`Starting the memgator proxy2 for upstream[${upstream2}] listening on port[${port2}]`)
 
-app.all('*', proxy(upstream, {
-  intercept(rsp, data, req, res, callback) {
-    console.log('intercept')
-    console.log(res)
-    res.setHeader('Via', 'ws-dl memgator proxy')
-    callback(null, data)
-    let statusCode = rsp.statusCode
-    console.log(req.url)
-    let urlT = S(req.url)
-    if (urlT.startsWith('/timemap') && req.method === 'GET') {
-      let now = moment().format('YYYYMMDDHHmmss')
-      let urlO = pathRE.exec(urlT.s)
-      let hash = md5(urlO[ 1 ])
-      console.log(urlO[ 1 ])
-      let memcount = rsp.headers[ 'x-memento-count' ]
-      logger.info(`got timemap request url:count, ${urlO[ 1 ]}:${memcount}`)
-      var fileType
-      switch (rsp.headers[ 'content-type' ]) {
-        case 'application/json':
-          fileType = 'json'
-          break
-        case 'application/link-format':
-          fileType = 'link'
-          break
-        case 'application/cdxj+ors':
-          fileType = 'cdxj'
-          break
-        default:
-          fileType = 'txt'
-      }
-      let path = `data/timemaps/${hash}/${statusCode}`
-      fs.ensureDir(path, error => {
-        if (error) {
-          logger.error(`ensuring dir timemap error for hash[${hash}] %s`, error)
-        } else {
-          fs.writeFile(`${path}/${now}-timemap.${fileType}`, data, 'utf8', err => {
-            if (err) {
-              logger.error(`writting timemap error for hash[${hash}] %s`, err)
-            }
-          })
-        }
-      })
-      let url = urlO[ 1 ]
-      let id = { url }
-      db.find(id, (errFind, docs) => {
-          if (errFind) {
-            logger.error('finding url[%s] failed %s', url, errFind)
-          } else {
-            if (docs.length === 0) {
-              console.log('docs.length is zero inserting new document')
-              let insertMe = {
-                url,
-                hash,
-                mementoCount: [ { count: memcount, date: now } ],
-              }
-              db.insert(insertMe, (insertError, newDoc) => {
-                if (insertError) {
-                  logger.error('inserting new url[%s] failed %s', url, errFind)
-                } else {
-                  console.log('insert worked ', newDoc)
-                }
-              })
-            } else {
-              let update = {
-                $push: {
-                  mementoCount: { count: memcount, date: now }
-                }
-              }
-              db.update(id, update, { upsert: false }, (errUpdate, numAffected, affectedDocuments, upsert) => {
-                if (errUpdate) {
-                  logger.error('updating mementocount timemap for url[%s] failed %s', url, errFind)
-                } else {
-                  console.log('updating db worked ', numAffected, affectedDocuments)
-                }
-              })
-            }
-          }
-        }
-      )
-    }
-  },
-  preserveHostHdr: true
-}))
 
-let proxyS = http.createServer(app)
-proxyS.listen(port)
+
+let proxyS1 = http.createServer(buildProxy(upstream1,db, logger)).withShutdown()
+proxyS1.listen(port1)
+
+let proxyS2 = http.createServer(buildProxy(upstream2,db, logger)).withShutdown()
+proxyS2.listen(port2)
 
 process.on('SIGTERM', () => {
   console.log('Stopping proxy server')
-  proxyS.close(() => {
-    process.exit(0)
+  proxyS1.shutdown(() => {
+    console.log('proxy 1 shut down')
+    proxyS2.shutdown(() => {
+      console.log('proxy 2 shut down')
+      process.exit(0)
+    })
   })
 })
 
 process.on('SIGINT', () => {
   console.log('Stopping proxy server')
-  proxyS.close(() => {
-    process.exit(0)
+  proxyS1.shutdown(() => {
+    console.log('proxy 1 shut down')
+    proxyS2.shutdown(() => {
+      console.log('proxy 2 shut down')
+      process.exit(0)
+    })
   })
 })
