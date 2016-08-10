@@ -118,7 +118,7 @@ app.all('*', proxy(upstream, {
               let insertMe = {
                 url,
                 hash,
-                mementoCount: [ { count: memcount, date: now } ],
+                mementoCount: [ { count: memcount, date: nowTime } ],
               }
               db.insert(insertMe, (insertError, newDoc) => {
                 if (insertError) {
@@ -130,7 +130,7 @@ app.all('*', proxy(upstream, {
             } else {
               let update = {
                 $push: {
-                  mementoCount: { count: memcount, date: now }
+                  mementoCount: { count: memcount, date: nowTime }
                 }
               }
               db.update(id, update, { upsert: false }, (errUpdate, numAffected, affectedDocuments, upsert) => {
