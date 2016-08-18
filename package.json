@@ -2,6 +2,7 @@
   "name": "memproxy",
   "version": "0.0.1",
   "dependencies": {
+    "bluebird": "^3.4.1",
     "body-parser": "^1.15.1",
     "connect-timeout": "^1.7.0",
     "cookie-parser": "^1.4.3",
@@ -15,10 +16,13 @@
     "md5": "^2.1.0",
     "minimist": "^1.2.0",
     "moment": "^2.14.1",
+    "moment-recur": "^1.0.5",
     "morgan": "^1.7.0",
     "nedb": "^1.8.0",
+    "node-schedule": "^1.1.1",
     "pretty-error": "^2.0.0",
     "string": "^3.3.1",
+    "tar.gz": "^1.0.5",
     "winston": "^2.2.0",
     "yargs": "^4.8.1"
   },
@@ -27,7 +31,8 @@
   },
   "scripts": {
     "start": "node ./bin/memgatorProxy",
-    "start2": "babel-node src/memgatorProxy --u http://localhost:9000 --p 8008"
+    "start2": "babel-node src/memgatorProxy --u http://localhost:9000 --p 8008",
+    "test": "babel-node src/wrapUp"
   },
   "devDependencies": {
     "babel-cli": "^6.11.4",

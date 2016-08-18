@@ -9,7 +9,38 @@ import moment from 'moment'
 import winston from 'winston'
 import Datastore from 'nedb'
 import timeout from 'connect-timeout'
+import tar from 'tar.gz'
+import Promise from 'bluebird'
+import schedule from 'node-schedule'
+require('moment-recur')
 require('http-shutdown').extend()
+
+/// 0 0 0 1/1 * ? *
+
+// 0 0 * * * node wrapUp.js >/dev/null 2>&1
+
+
+function empty (emptyME) {
+  return new Promise((resolve, reject) => {
+    if (emptyME.isDir) {
+      fs.emptyDir(emptyME.me, (err) => {
+        if (err) {
+          reject(err)
+        }
+        resolve()
+      })
+    } else {
+      fs.closeSync(fs.openSync(emptyME.me, 'w'))
+      resolve()
+    }
+  })
+}
+
+const dirs = [
+  { me: 'data/timemaps', isDir: true },
+  { me: path.join('data/logs', 'infos.log'), isDir: false },
+  { me: path.join('data/logs', 'errors.log'),isDir: false }
+  ]
 
 function haltOnTimedout (req, res, next) {
   if (!req.timedout) next()
@@ -23,7 +54,14 @@ let db = new Datastore({
   autoload: true
 })
 
-db.persistence.setAutocompactionInterval(300000)
+db.persistence.setAutocompactionInterval(600000)
+
+let rule = new schedule.RecurrenceRule()
+// rule.second = new schedule.Range(0,59,5)
+rule.dayOfWeek = [ 0, 1, 2, 3, 4, 5, 6 ]
+rule.hour = 0
+rule.minute = 1
+rule.second = 0
 
 const logger = new (winston.Logger)({
   transports: [
@@ -50,6 +88,26 @@ const logger = new (winston.Logger)({
 
 logger.exitOnError = false
 
+const reacurringJob = schedule.scheduleJob(rule, () => {
+  console.log('starting up the clean up of past day')
+  let now = moment()
+  let tarIt = tar().createReadStream('data')
+  let tarOut = fs.createWriteStream(`tars/${now.subtract(1, 'day').format('MMDDYYYY')}.tar.gz`)
+  tarIt.pipe(tarOut)
+    .on('close', () => {
+      Promise.map(dirs, empty)
+        .then(() => {
+          logger.info('cleaned up the past day')
+
+          fs.closeSync(fs.openSync(path.join('data/dbs', 'url-hash-count.db'), 'w'))
+        })
+        .error(err => logger.error('emptying logs timemaps', err))
+    })
+    .on('error', (error) => {
+      logger.error('creating tar', error)
+    })
+})
+
 const pathRE = new RegExp('/timemap/(?:(?:json)|(?:link)|(?:cdxj))/(.+)')
 
 //memgator port 80,
@@ -64,11 +122,10 @@ app.all('*', proxy(upstream, {
   intercept(rsp, data, req, res, callback) {
     console.log('intercept')
     res.setHeader('Via', 'ws-dl memgator proxy')
-    var ip = req.headers['x-forwarded-for'] ||
+    var ip = req.headers[ 'x-forwarded-for' ] ||
       req.connection.remoteAddress ||
       req.socket.remoteAddress ||
       req.connection.socket.remoteAddress
-    console.log(ip)
     callback(null, data)
     let statusCode = rsp.statusCode
     console.log(req.url)
@@ -80,7 +137,7 @@ app.all('*', proxy(upstream, {
       let hash = md5(urlO[ 1 ])
       console.log(urlO[ 1 ])
       let memcount = rsp.headers[ 'x-memento-count' ]
-      logger.info(`got timemap request url:count, ${urlO[ 1 ]}:${memcount}`)
+      logger.info('got timemap request', { url: urlO[ 1 ], memcount, ip })
       var fileType
       switch (rsp.headers[ 'content-type' ]) {
         case 'application/json':
@@ -118,7 +175,7 @@ app.all('*', proxy(upstream, {
               let insertMe = {
                 url,
                 hash,
-                mementoCount: [ { count: memcount, date: nowTime } ],
+                mementoCount: [ { ip, statusCode, count: memcount, date: nowTime } ],
               }
               db.insert(insertMe, (insertError, newDoc) => {
                 if (insertError) {
@@ -130,7 +187,7 @@ app.all('*', proxy(upstream, {
             } else {
               let update = {
                 $push: {
-                  mementoCount: { count: memcount, date: nowTime }
+                  mementoCount: { ip, statusCode, count: memcount, date: nowTime }
                 }
               }
               db.update(id, update, { upsert: false }, (errUpdate, numAffected, affectedDocuments, upsert) => {

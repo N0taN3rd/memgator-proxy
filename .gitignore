@@ -101,3 +101,5 @@ sized/
 thumbs/
 _thumbs/
 */expressionengine/cache/*
+
+*.db
