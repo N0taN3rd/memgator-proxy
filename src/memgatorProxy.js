@@ -54,7 +54,7 @@ let db = new Datastore({
   autoload: true
 })
 
-db.persistence.setAutocompactionInterval(600000)
+db.persistence.setAutocompactionInterval(3000000)
 
 let rule = new schedule.RecurrenceRule()
 // rule.second = new schedule.Range(0,59,5)
