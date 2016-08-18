@@ -12,7 +12,6 @@ import timeout from 'connect-timeout'
 import tar from 'tar.gz'
 import Promise from 'bluebird'
 import schedule from 'node-schedule'
-require('moment-recur')
 require('http-shutdown').extend()
 
 /// 0 0 0 1/1 * ? *
