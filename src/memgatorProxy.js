@@ -5,7 +5,7 @@ import S from 'string'
 import md5 from 'md5'
 import path from 'path'
 import fs from 'fs-extra'
-import moment from 'moment'
+import moment from 'moment-timezone'
 import winston from 'winston'
 import Datastore from 'nedb'
 import timeout from 'connect-timeout'
@@ -22,7 +22,7 @@ require('http-shutdown').extend()
 
 
 const dirs = [
-  { me: 'data/timemaps', isDir: true },
+  { me: 'data/timemaps', isDir: true, name: "timemaps" },
   { me: path.join('data/logs', 'infos.log'), isDir: false },
   { me: path.join('data/logs', 'errors.log'),isDir: false },
   { me: path.join('data/dbs', 'url-hash-count.db'),isDir: false }
@@ -54,19 +54,27 @@ function tarIt (tarMe) {
       })
       .on('error', (error) => {
         logger.error('creating tar', error)
-        resolve()
+        reject(error)
       })
   })
 }
 function empty (emptyME) {
   return new Promise((resolve, reject) => {
+    let now = moment().subtract(1, 'day').format('MMDDYYYY')
     if (emptyME.isDir) {
-      fs.emptyDir(emptyME.me, (err) => {
-        if (err) {
-          reject(err)
+      fs.copy(emptyME.me,`data/${now}/${emptyME.name}`,(err) => {
+        if(err) {
+          resolve()
+        } else {
+          fs.emptyDir(emptyME.me, (err) => {
+            if (err) {
+              reject(err)
+            }
+            resolve()
+          })
         }
-        resolve()
       })
+
     } else {
       fs.closeSync(fs.openSync(emptyME.me, 'w'))
       resolve()
@@ -102,14 +110,12 @@ const logger = new (winston.Logger)({
     new (winston.transports.File)({
       name: 'info-file',
       filename: 'data/logs/infos.log',
-      level: 'info',
-      timestamp: function() { return moment.utc() }
+      level: 'info'
     }),
     new (winston.transports.File)({
       name: 'error-file',
       filename: 'data/logs/errors.log',
-      level: 'error',
-      timestamp: function() { return moment.utc() }
+      level: 'error'
     }),
     new (winston.transports.Console)()
   ],
@@ -126,18 +132,20 @@ logger.exitOnError = false
 
 const reacurringJob = schedule.scheduleJob(rule, () => {
   console.log('starting up the clean up of past day')
-
-  Promise.map(tarDirs,tarIt)
-    .then(() => {
-      Promise.map(dirs, empty)
-        .then(() => {
-          logger.info('cleaned up the past day')
-        })
-        .error(err => logger.error('emptying logs timemaps', err))
-    })
-    .error( (error) => {
-      logger.error('creating tars', error)
-    })
+  let now = moment().subtract(1, 'day').format('MMDDYYYY')
+  fs.ensureDir(`data/tar/${now}`, ensureError => {
+    Promise.map(tarDirs,tarIt)
+      .then(() => {
+        Promise.map(dirs, empty)
+          .then(() => {
+            logger.info('cleaned up the past day')
+          })
+          .error(err => logger.error('emptying logs timemaps', err))
+      })
+      .error( (error) => {
+        logger.error('creating tars', error)
+      })
+  })
 })
 
 const pathRE = new RegExp('/timemap/(?:(?:json)|(?:link)|(?:cdxj))/(.+)')
@@ -163,12 +171,12 @@ app.all('*', proxy(upstream, {
     console.log(req.url)
     let urlT = S(req.url)
     if (urlT.startsWith('/timemap') && req.method === 'GET') {
-      let now = moment.utc()
+      let now = moment()
       let nowTime = now.format('YYYYMMDDHHmmssSSS')
       let urlO = pathRE.exec(urlT.s)
       let hash = md5(urlO[ 1 ])
       console.log(urlO[ 1 ])
-      let noUtc =  moment().format('YYYYMMDDHHmmssSSS')
+      let noUtc =  moment.tz('US/Eastern').format('YYYYMMDDHHmmssSSS')
       let memcount = rsp.headers[ 'x-memento-count' ]
       logger.info('got timemap request', { url: urlO[ 1 ], memcount, ip, noUtc })
       var fileType
