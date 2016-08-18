@@ -20,6 +20,45 @@ require('http-shutdown').extend()
 // 0 0 * * * node wrapUp.js >/dev/null 2>&1
 
 
+
+
+const dirs = [
+  { me: 'data/timemaps', isDir: true },
+  { me: path.join('data/logs', 'infos.log'), isDir: false },
+  { me: path.join('data/logs', 'errors.log'),isDir: false },
+  { me: path.join('data/dbs', 'url-hash-count.db'),isDir: false }
+  ]
+
+const tarDirs = [
+  {
+    tar: 'data/timemaps',
+    name: 'timemaps'
+  },
+  {
+    tar: 'data/logs',
+    name: 'logs'
+  },
+  {
+    tar: 'data/dbs',
+    name: 'dbs'
+  }
+]
+
+function tarIt (tarMe) {
+  return new Promise((resolve, reject) => {
+    let now = moment().subtract(1, 'day').format('MMDDYYYY')
+    let tarIt = tar().createReadStream(tarMe.tar)
+    let tarOut = fs.createWriteStream(`data/tars/${tarMe.name}-${now}.tar.gz`)
+    tarIt.pipe(tarOut)
+      .on('close', () => {
+        resolve()
+      })
+      .on('error', (error) => {
+        logger.error('creating tar', error)
+        resolve()
+      })
+  })
+}
 function empty (emptyME) {
   return new Promise((resolve, reject) => {
     if (emptyME.isDir) {
@@ -36,11 +75,7 @@ function empty (emptyME) {
   })
 }
 
-const dirs = [
-  { me: 'data/timemaps', isDir: true },
-  { me: path.join('data/logs', 'infos.log'), isDir: false },
-  { me: path.join('data/logs', 'errors.log'),isDir: false }
-  ]
+
 
 function haltOnTimedout (req, res, next) {
   if (!req.timedout) next()
@@ -68,12 +103,14 @@ const logger = new (winston.Logger)({
     new (winston.transports.File)({
       name: 'info-file',
       filename: 'data/logs/infos.log',
-      level: 'info'
+      level: 'info',
+      timestamp: function() { return moment.utc() }
     }),
     new (winston.transports.File)({
       name: 'error-file',
       filename: 'data/logs/errors.log',
-      level: 'error'
+      level: 'error',
+      timestamp: function() { return moment.utc() }
     }),
     new (winston.transports.Console)()
   ],
@@ -90,21 +127,17 @@ logger.exitOnError = false
 
 const reacurringJob = schedule.scheduleJob(rule, () => {
   console.log('starting up the clean up of past day')
-  let now = moment()
-  let tarIt = tar().createReadStream('data')
-  let tarOut = fs.createWriteStream(`tars/${now.subtract(1, 'day').format('MMDDYYYY')}.tar.gz`)
-  tarIt.pipe(tarOut)
-    .on('close', () => {
+
+  Promise.map(tarDirs,tarIt)
+    .then(() => {
       Promise.map(dirs, empty)
         .then(() => {
           logger.info('cleaned up the past day')
-
-          fs.closeSync(fs.openSync(path.join('data/dbs', 'url-hash-count.db'), 'w'))
         })
         .error(err => logger.error('emptying logs timemaps', err))
     })
-    .on('error', (error) => {
-      logger.error('creating tar', error)
+    .error( (error) => {
+      logger.error('creating tars', error)
     })
 })
 
@@ -131,13 +164,14 @@ app.all('*', proxy(upstream, {
     console.log(req.url)
     let urlT = S(req.url)
     if (urlT.startsWith('/timemap') && req.method === 'GET') {
-      let now = moment()
-      let nowTime = now.format('YYYYMMDDHHmmss')
+      let now = moment.utc()
+      let nowTime = now.format('YYYYMMDDHHmmssSSS')
       let urlO = pathRE.exec(urlT.s)
       let hash = md5(urlO[ 1 ])
       console.log(urlO[ 1 ])
+      let noUtc =  moment().format('YYYYMMDDHHmmssSSS')
       let memcount = rsp.headers[ 'x-memento-count' ]
-      logger.info('got timemap request', { url: urlO[ 1 ], memcount, ip })
+      logger.info('got timemap request', { url: urlO[ 1 ], memcount, ip, noUtc })
       var fileType
       switch (rsp.headers[ 'content-type' ]) {
         case 'application/json':
@@ -175,7 +209,7 @@ app.all('*', proxy(upstream, {
               let insertMe = {
                 url,
                 hash,
-                mementoCount: [ { ip, statusCode, count: memcount, date: nowTime } ],
+                mementoCount: [ { ip, statusCode, count: memcount, date: nowTime, noUtc } ],
               }
               db.insert(insertMe, (insertError, newDoc) => {
                 if (insertError) {
@@ -187,7 +221,7 @@ app.all('*', proxy(upstream, {
             } else {
               let update = {
                 $push: {
-                  mementoCount: { ip, statusCode, count: memcount, date: nowTime }
+                  mementoCount: { ip, statusCode, count: memcount, date: nowTime, noUtc }
                 }
               }
               db.update(id, update, { upsert: false }, (errUpdate, numAffected, affectedDocuments, upsert) => {
