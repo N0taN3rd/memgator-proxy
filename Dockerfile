@@ -1,5 +1,5 @@
 FROM node:6.3.1-wheezy
-MAINTAINER John Berlin <jberlin@cs.odu.edu>
+MAINTAINER John Berlin <n0tan3rd@gmail.com>
 
 ADD . /usr/memproxy
 WORKDIR /usr/memproxy

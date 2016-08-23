@@ -12,11 +12,13 @@
     "fs-extra": "^0.30.0",
     "http-proxy": "^1.14.0",
     "http-shutdown": "^1.0.3",
-    "lodash": "^4.14.1",
+    "lodash": "^4.14.2",
     "md5": "^2.1.0",
     "minimist": "^1.2.0",
     "moment": "^2.14.1",
     "moment-timezone": "^0.5.5",
+    "mongodb": "^2.2.7",
+    "monk": "^3.1.2",
     "morgan": "^1.7.0",
     "nedb": "^1.8.0",
     "node-schedule": "^1.1.1",
@@ -32,6 +34,7 @@
   "scripts": {
     "start": "node ./bin/memgatorProxy",
     "start2": "babel-node src/memgatorProxy --u http://localhost:9000 --p 8008",
+    "maybeMongo": "babel-node src/maybeMongo",
     "test": "babel-node src/wrapUp"
   },
   "devDependencies": {
