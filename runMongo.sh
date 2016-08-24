@@ -3,7 +3,7 @@ here=$(pwd)
 
 if [[ "$1" == "build" ]]; then
     cd mongodocker
-    docker build -t mongodb .
+    docker build -t jberlin/mongodb .
 else
     echo run
     state=$(docker inspect --format "{{.State.Running}}" mongo-memprox 2>/dev/null)
@@ -14,7 +14,7 @@ else
         -p 27017:27017 \
         -v ${here}/mongodocker/data/db:/data/db \
         -v ${here}/mongodocker/data/configdb:/data/configdb \
-        mongodb
+        jberlin/mongodb
 fi
 
 

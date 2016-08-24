@@ -1,0 +1,24 @@
+version: '2'
+services:
+  mongodb-memprox:
+    image: jberlin/mongodb
+    restart: always
+    ports:
+      - "27017:27017"
+    volumes:
+      - /home/john/WebstormProjects/memgator-proxy/data/db:/data/db
+      - /home/john/WebstormProjects/memgator-proxy/data/configdb:/data/configdb
+  memproxy:
+      image: jberlin/memgator-proxy
+      restart: always
+      depends_on:
+        - mongodb-memprox
+      links:
+        - mongodb-memprox
+      ports:
+         - "8008:8008"
+  #      - "1208:8008"
+  #      - "80:8008"
+      volumes:
+        - /home/john/WebstormProjects/memgator-proxy/data:/usr/memproxy/data
+  #     - /data/MemGator/proxydata:/usr/memproxy/data

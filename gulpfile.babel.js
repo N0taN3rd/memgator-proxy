@@ -8,7 +8,7 @@ gulp.task('watch', () => {
 })
 
 gulp.task('build', () => {
-  return gulp.src('src/memgatorProxy.js')
+  return gulp.src('src/*.js')
     .pipe(babel({
       "presets": [ "es2015", "stage-0", "node6" ],
       "plugins": [

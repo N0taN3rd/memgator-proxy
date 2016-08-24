@@ -12,21 +12,22 @@ import timeout from 'connect-timeout'
 import tar from 'tar.gz'
 import Promise from 'bluebird'
 import schedule from 'node-schedule'
+import cluser from 'cluster'
+import ua from 'express-useragent'
+import rp from 'request-promise'
+import _ from 'lodash'
 require('http-shutdown').extend()
 
 /// 0 0 0 1/1 * ? *
 
 // 0 0 * * * node wrapUp.js >/dev/null 2>&1
 
-
-
-
 const dirs = [
   { me: 'data/timemaps', isDir: true, name: "timemaps" },
   { me: path.join('data/logs', 'infos.log'), isDir: false },
-  { me: path.join('data/logs', 'errors.log'),isDir: false },
-  { me: path.join('data/dbs', 'url-hash-count.db'),isDir: false }
-  ]
+  { me: path.join('data/logs', 'errors.log'), isDir: false },
+  { me: path.join('data/dbs', 'url-hash-count.db'), isDir: false }
+]
 
 const tarDirs = [
   {
@@ -62,8 +63,8 @@ function empty (emptyME) {
   return new Promise((resolve, reject) => {
     let now = moment().subtract(1, 'day').format('MMDDYYYY')
     if (emptyME.isDir) {
-      fs.copy(emptyME.me,`data/${now}/${emptyME.name}`,(err) => {
-        if(err) {
+      fs.copy(emptyME.me, `data/${now}/${emptyME.name}`, (err) => {
+        if (err) {
           resolve()
         } else {
           fs.emptyDir(emptyME.me, (err) => {
@@ -82,28 +83,19 @@ function empty (emptyME) {
   })
 }
 
-
-
-function haltOnTimedout (req, res, next) {
-  if (!req.timedout) next()
-}
-let app = express()
-app.use(timeout('300s'))
-app.use(haltOnTimedout)
-
-let db = new Datastore({
-  filename: path.join('data/dbs', 'url-hash-count.db'),
-  autoload: true
-})
-
-db.persistence.setAutocompactionInterval(3000000)
-
-let rule = new schedule.RecurrenceRule()
-// rule.second = new schedule.Range(0,59,5)
-rule.dayOfWeek = [ 0, 1, 2, 3, 4, 5, 6 ]
-rule.hour = 0
-rule.minute = 1
-rule.second = 0
+// let db = new Datastore({
+//   filename: path.join('data/dbs', 'newWay.db'), //'url-hash-count.db'),
+//   autoload: true
+// })
+//
+// db.persistence.setAutocompactionInterval(3000000)
+//
+// let rule = new schedule.RecurrenceRule()
+// // rule.second = new schedule.Range(0,59,5)
+// rule.dayOfWeek = [ 0, 1, 2, 3, 4, 5, 6 ]
+// rule.hour = 0
+// rule.minute = 1
+// rule.second = 0
 
 const logger = new (winston.Logger)({
   transports: [
@@ -130,23 +122,23 @@ const logger = new (winston.Logger)({
 
 logger.exitOnError = false
 
-const reacurringJob = schedule.scheduleJob(rule, () => {
-  console.log('starting up the clean up of past day')
-  let now = moment().subtract(1, 'day').format('MMDDYYYY')
-  fs.ensureDir(`data/tar/${now}`, ensureError => {
-    Promise.map(tarDirs,tarIt)
-      .then(() => {
-        Promise.map(dirs, empty)
-          .then(() => {
-            logger.info('cleaned up the past day')
-          })
-          .error(err => logger.error('emptying logs timemaps', err))
-      })
-      .error( (error) => {
-        logger.error('creating tars', error)
-      })
-  })
-})
+// const reacurringJob = schedule.scheduleJob(rule, () => {
+//   console.log('starting up the clean up of past day')
+//   let now = moment().subtract(1, 'day').format('MMDDYYYY')
+//   fs.ensureDir(`data/tar/${now}`, ensureError => {
+//     Promise.map(tarDirs,tarIt)
+//       .then(() => {
+//         Promise.map(dirs, empty)
+//           .then(() => {
+//             logger.info('cleaned up the past day')
+//           })
+//           .error(err => logger.error('emptying logs timemaps', err))
+//       })
+//       .error( (error) => {
+//         logger.error('creating tars', error)
+//       })
+//   })
+// })
 
 const pathRE = new RegExp('/timemap/(?:(?:json)|(?:link)|(?:cdxj))/(.+)')
 
@@ -158,27 +150,36 @@ let port = 8008
 
 console.log(`Starting the memgator proxy for upstream[${upstream}] listening on port[${port}]`)
 
+function haltOnTimedout (req, res, next) {
+  if (!req.timedout) next()
+}
+let app = express()
+app.use(timeout('300s'))
+app.use(haltOnTimedout)
+app.use(ua.express())
+app.use(haltOnTimedout)
+
 app.all('*', proxy(upstream, {
   intercept(rsp, data, req, res, callback) {
-    console.log('intercept')
     res.setHeader('Via', 'ws-dl memgator proxy')
-    var ip = req.headers[ 'x-forwarded-for' ] ||
-      req.connection.remoteAddress ||
-      req.socket.remoteAddress ||
-      req.connection.socket.remoteAddress
     callback(null, data)
+    let ip = req.ip
+    let ua = _.transform(req.useragent, (result, value, key) => {
+      if (value) {
+        result[ key ] = value
+      }
+    }, {})
     let statusCode = rsp.statusCode
-    console.log(req.url)
+    let method = req.method
     let urlT = S(req.url)
-    if (urlT.startsWith('/timemap') && req.method === 'GET') {
-      let now = moment()
-      let nowTime = now.format('YYYYMMDDHHmmssSSS')
+    let now = moment()
+    let nowTime = now.format('YYYYMMDDHHmmssSSS')
+    let noUtc = moment.tz('US/Eastern').format('YYYYMMDDHHmmssSSS')
+    if (urlT.startsWith('/timemap') && method === 'GET') {
       let urlO = pathRE.exec(urlT.s)
       let hash = md5(urlO[ 1 ])
-      console.log(urlO[ 1 ])
-      let noUtc =  moment.tz('US/Eastern').format('YYYYMMDDHHmmssSSS')
       let memcount = rsp.headers[ 'x-memento-count' ]
-      logger.info('got timemap request', { url: urlO[ 1 ], memcount, ip, noUtc })
+      logger.info('got timemap request %j', { url: urlO[ 1 ], memcount, ip, noUtc, userAgent: ua })
       var fileType
       switch (rsp.headers[ 'content-type' ]) {
         case 'application/json':
@@ -206,43 +207,83 @@ app.all('*', proxy(upstream, {
         }
       })
       let url = urlO[ 1 ]
-      let id = { url }
-      db.find(id, (errFind, docs) => {
-          if (errFind) {
-            logger.error('finding url[%s] failed %s', url, errFind)
-          } else {
-            if (docs.length === 0) {
-              console.log('docs.length is zero inserting new document')
-              let insertMe = {
-                url,
-                hash,
-                mementoCount: [ { ip, statusCode, count: memcount, date: nowTime, noUtc } ],
+      let opts = {
+        method: 'POST',
+        uri: 'http://localhost:8005/timemap',
+        body: {
+          mc: {
+            url,
+            hash,
+            update: {
+              $push: {
+                mementoCount: { ip, statusCode, count: memcount, date: nowTime, noUtc }
               }
-              db.insert(insertMe, (insertError, newDoc) => {
-                if (insertError) {
-                  logger.error('inserting new url[%s] failed %s', url, errFind)
-                } else {
-                  console.log('insert worked ', newDoc)
-                }
-              })
-            } else {
-              let update = {
-                $push: {
-                  mementoCount: { ip, statusCode, count: memcount, date: nowTime, noUtc }
+            }
+          },
+          ua: {
+            source: ua.source,
+            update: {
+              $push: {
+                visitation: {
+                  ua,
+                  ip,
+                  date: nowTime,
+                  noUtc,
+                  statusCode
                 }
               }
-              db.update(id, update, { upsert: false }, (errUpdate, numAffected, affectedDocuments, upsert) => {
-                if (errUpdate) {
-                  logger.error('updating mementocount timemap for url[%s] failed %s', url, errFind)
-                } else {
-                  console.log('updating db worked ', numAffected, affectedDocuments)
-                }
-              })
             }
           }
-        }
-      )
+        },
+        resolveWithFullResponse: true,
+        json: true // Automatically stringifies the body to JSON
+      }
+
+      rp(opts)
+        .then(msR => {
+          console.log("post succeeded with status %d", msR.statusCode)
+        }).catch(err => {
+        logger.error('post failed to mongo server for timemap',err)
+      })
+
+    } else {
+      /*
+       TimeMap   : http://localhost:9000/timemap/{FORMAT}/{URI-R}
+       TimeGate  : http://localhost:9000/timegate/{URI-R} [Accept-Datetime]
+       Memento   : http://localhost:9000/memento[/{FORMAT}]/{DATETIME}/{URI-R}
+       */
+      let visiting = S(res.url).startsWith('timegate/') ? 'timegate'  : 'memento'
+      let opts = {
+        method: 'POST',
+        uri: 'http://localhost:8005/other',
+        body: {
+          visiting,
+          update: {
+            $push: {
+              visitation: {
+                url: res.url,
+                source: ua.source,
+                ip,
+                date: nowTime,
+                noUtc,
+                statusCode
+              }
+            }
+          }
+
+        },
+        resolveWithFullResponse: true,
+        json: true // Automatically stringifies the body to JSON
+      }
+      rp(opts)
+        .then(msR => {
+          console.log("post succeeded with status %d", msR.statusCode)
+        })
+        .catch(err => {
+          logger.error('post for other failed',err)
+      })
     }
+
   },
   preserveHostHdr: true
 }))
@@ -263,5 +304,11 @@ process.on('SIGINT', () => {
   console.log('Stopping proxy server')
   proxyS.shutdown(() => {
     process.exit(0)
+  })
+})
+
+process.once('SIGUSR2', () => {
+  proxyS.shutdown(() => {
+    process.kill(process.pid, 'SIGUSR2')
   })
 })

@@ -2,6 +2,7 @@ FROM node:6.3.1-wheezy
 MAINTAINER John Berlin <n0tan3rd@gmail.com>
 
 ADD . /usr/memproxy
+RUN chmod a+wrx /usr/memproxy
 WORKDIR /usr/memproxy
 RUN npm install
 
@@ -9,5 +10,4 @@ RUN npm install
 
 
 RUN node --harmony node_modules/gulp/bin/gulp.js --color --gulpfile gulpfile.babel.js build
-
-CMD node bin/memgatorProxy
+CMD npm run runBoth

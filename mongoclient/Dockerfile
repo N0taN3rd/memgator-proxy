@@ -1,0 +1,4 @@
+FROM mongoclient/mongoclient
+
+ENV MONGOCLIENT_AUTH=true
+ENV MONGOCLIENT_USERNAME=sercan
