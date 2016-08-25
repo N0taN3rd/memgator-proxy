@@ -16,6 +16,7 @@ import cluser from 'cluster'
 import ua from 'express-useragent'
 import rp from 'request-promise'
 import _ from 'lodash'
+import hasha from 'hasha'
 import DailyRotateFile from 'winston-daily-rotate-file'
 require('http-shutdown').extend()
 
@@ -170,10 +171,11 @@ app.all('*', proxy(upstream, {
     let nowTime = now.format('YYYYMMDDHHmmssSSS')
     let noUtc = moment.tz('US/Eastern').format('YYYYMMDDHHmmssSSS')
     if (urlT.startsWith('/timemap') && method === 'GET') {
+      let bufferHash = hasha(data,{algorithm: 'md5'})
       let urlO = pathRE.exec(urlT.s)
       let hash = md5(urlO[ 1 ])
       let memcount = rsp.headers[ 'x-memento-count' ]
-      logger.info('got timemap request', { what: 'timemap', url: urlO[ 1 ], hash, memcount, ip, statusCode, count: memcount, date: nowTime, noUtc, userAgent: ua })
+      logger.info('got timemap request', { what: 'timemap', contentHash: bufferHash, url: urlO[ 1 ], hash, memcount, ip, statusCode, count: memcount, date: nowTime, noUtc, userAgent: ua })
       var fileType
       switch (rsp.headers[ 'content-type' ]) {
         case 'application/json':
@@ -189,11 +191,13 @@ app.all('*', proxy(upstream, {
           fileType = 'txt'
       }
       let path = `data/timemaps/${now.format('YYYYMMDD')}`
+
+
       fs.ensureDir(path, error => {
         if (error) {
           logger.error(`ensuring dir timemap error for hash[${hash}] %s`, error)
         } else {
-          fs.writeFile(`${path}/${hash}-${ip}-${nowTime}-${statusCode}-timemap.${fileType}`, data, 'utf8', err => {
+          fs.writeFile(`${path}/${bufferHash}-timemap.${fileType}`, data, 'utf8', err => {
             if (err) {
               logger.error(`writting timemap error for hash[${hash}] %s`, err)
             }
