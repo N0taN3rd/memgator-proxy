@@ -4,7 +4,7 @@ import winston from 'winston'
 import bodyParser from 'body-parser'
 require('http-shutdown').extend()
 
-const testData = require('monk')('localhost:27017/testData')
+const testData = require('monk')('mongodb-memprox:27017/data')
 const urlHashCount = testData.get('urlHashCount')
 const uas = testData.get('userAgents')
 const other = testData.get('other')

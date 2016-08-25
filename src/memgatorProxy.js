@@ -16,6 +16,7 @@ import cluser from 'cluster'
 import ua from 'express-useragent'
 import rp from 'request-promise'
 import _ from 'lodash'
+import DailyRotateFile from 'winston-daily-rotate-file'
 require('http-shutdown').extend()
 
 /// 0 0 0 1/1 * ? *
@@ -23,10 +24,7 @@ require('http-shutdown').extend()
 // 0 0 * * * node wrapUp.js >/dev/null 2>&1
 
 const dirs = [
-  { me: 'data/timemaps', isDir: true, name: "timemaps" },
-  { me: path.join('data/logs', 'infos.log'), isDir: false },
-  { me: path.join('data/logs', 'errors.log'), isDir: false },
-  { me: path.join('data/dbs', 'url-hash-count.db'), isDir: false }
+  { me: 'data/timemaps', isDir: true, name: "timemaps" }
 ]
 
 const tarDirs = [
@@ -37,10 +35,6 @@ const tarDirs = [
   {
     tar: 'data/logs',
     name: 'logs'
-  },
-  {
-    tar: 'data/dbs',
-    name: 'dbs'
   }
 ]
 
@@ -90,22 +84,26 @@ function empty (emptyME) {
 //
 // db.persistence.setAutocompactionInterval(3000000)
 //
-// let rule = new schedule.RecurrenceRule()
-// // rule.second = new schedule.Range(0,59,5)
-// rule.dayOfWeek = [ 0, 1, 2, 3, 4, 5, 6 ]
-// rule.hour = 0
-// rule.minute = 1
-// rule.second = 0
+let rule = new schedule.RecurrenceRule()
+// rule.second = new schedule.Range(0,59,5)
+rule.dayOfWeek = [ 0, 1, 2, 3, 4, 5, 6 ]
+rule.hour = 0
+rule.minute = 1
+rule.second = 0
 
 const logger = new (winston.Logger)({
   transports: [
-    new (winston.transports.File)({
-      name: 'info-file',
-      filename: 'data/logs/infos.log',
+    new winston.transports.DailyRotateFile({
+      zippedArchive: true,
+      name: 'info-timemap-file',
+      datePattern: '.yyyy-MM-dd',
+      filename: 'data/logs/timemap.log',
       level: 'info'
     }),
-    new (winston.transports.File)({
+    new winston.transports.DailyRotateFile({
+      zippedArchive: true,
       name: 'error-file',
+      datePattern: '.yyyy-MM-dd',
       filename: 'data/logs/errors.log',
       level: 'error'
     }),
@@ -122,29 +120,25 @@ const logger = new (winston.Logger)({
 
 logger.exitOnError = false
 
-// const reacurringJob = schedule.scheduleJob(rule, () => {
-//   console.log('starting up the clean up of past day')
-//   let now = moment().subtract(1, 'day').format('MMDDYYYY')
-//   fs.ensureDir(`data/tar/${now}`, ensureError => {
-//     Promise.map(tarDirs,tarIt)
-//       .then(() => {
-//         Promise.map(dirs, empty)
-//           .then(() => {
-//             logger.info('cleaned up the past day')
-//           })
-//           .error(err => logger.error('emptying logs timemaps', err))
-//       })
-//       .error( (error) => {
-//         logger.error('creating tars', error)
-//       })
-//   })
-// })
+const reacurringJob = schedule.scheduleJob(rule, () => {
+  console.log('starting up the clean up of past day')
+  let now = moment().subtract(1, 'day').format('MMDDYYYY')
+  fs.ensureDir(`data/tar/${now}`, ensureError => {
+    Promise.map(tarDirs,tarIt)
+      .then(() => {
+        console.log('done cleaning up for a day')
+      })
+      .error( (error) => {
+        logger.error('creating tars', error)
+      })
+  })
+})
 
 const pathRE = new RegExp('/timemap/(?:(?:json)|(?:link)|(?:cdxj))/(.+)')
 
 //memgator port 80,
 //'http://localhost:9000'
-const isDebug = false
+const isDebug = true
 let upstream = isDebug ? 'http://localhost:9000' : 'http://memgator.cs.odu.edu:1209'
 let port = 8008
 
@@ -179,7 +173,7 @@ app.all('*', proxy(upstream, {
       let urlO = pathRE.exec(urlT.s)
       let hash = md5(urlO[ 1 ])
       let memcount = rsp.headers[ 'x-memento-count' ]
-      logger.info('got timemap request %j', { url: urlO[ 1 ], memcount, ip, noUtc, userAgent: ua })
+      logger.info('got timemap request', { what: 'timemap', url: urlO[ 1 ], hash, memcount, ip, statusCode, count: memcount, date: nowTime, noUtc, userAgent: ua })
       var fileType
       switch (rsp.headers[ 'content-type' ]) {
         case 'application/json':
@@ -206,84 +200,13 @@ app.all('*', proxy(upstream, {
           })
         }
       })
-      let url = urlO[ 1 ]
-      let opts = {
-        method: 'POST',
-        uri: 'http://localhost:8005/timemap',
-        body: {
-          mc: {
-            url,
-            hash,
-            update: {
-              $push: {
-                mementoCount: { ip, statusCode, count: memcount, date: nowTime, noUtc }
-              }
-            }
-          },
-          ua: {
-            source: ua.source,
-            update: {
-              $push: {
-                visitation: {
-                  ua,
-                  ip,
-                  date: nowTime,
-                  noUtc,
-                  statusCode
-                }
-              }
-            }
-          }
-        },
-        resolveWithFullResponse: true,
-        json: true // Automatically stringifies the body to JSON
-      }
-
-      rp(opts)
-        .then(msR => {
-          console.log("post succeeded with status %d", msR.statusCode)
-        }).catch(err => {
-        logger.error('post failed to mongo server for timemap',err)
-      })
 
     } else {
-      /*
-       TimeMap   : http://localhost:9000/timemap/{FORMAT}/{URI-R}
-       TimeGate  : http://localhost:9000/timegate/{URI-R} [Accept-Datetime]
-       Memento   : http://localhost:9000/memento[/{FORMAT}]/{DATETIME}/{URI-R}
-       */
       let visiting = S(res.url).startsWith('timegate/') ? 'timegate'  : 'memento'
-      let opts = {
-        method: 'POST',
-        uri: 'http://localhost:8005/other',
-        body: {
-          visiting,
-          update: {
-            $push: {
-              visitation: {
-                url: res.url,
-                source: ua.source,
-                ip,
-                date: nowTime,
-                noUtc,
-                statusCode
-              }
-            }
-          }
-
-        },
-        resolveWithFullResponse: true,
-        json: true // Automatically stringifies the body to JSON
-      }
-      rp(opts)
-        .then(msR => {
-          console.log("post succeeded with status %d", msR.statusCode)
-        })
-        .catch(err => {
-          logger.error('post for other failed',err)
-      })
+      logger.info(`got ${visiting} request`,
+        { what: visiting, url: res.url,  ip, statusCode, date: nowTime, noUtc, userAgent: ua }
+      )
     }
-
   },
   preserveHostHdr: true
 }))

@@ -10,4 +10,5 @@ RUN npm install
 
 
 RUN node --harmony node_modules/gulp/bin/gulp.js --color --gulpfile gulpfile.babel.js build
-CMD npm run runBoth
+
+CMD node bin/memgatorProxy
