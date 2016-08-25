@@ -17,6 +17,7 @@ import ua from 'express-useragent'
 import rp from 'request-promise'
 import _ from 'lodash'
 import hasha from 'hasha'
+import fileExists from 'file-exists'
 import DailyRotateFile from 'winston-daily-rotate-file'
 require('http-shutdown').extend()
 
@@ -190,15 +191,16 @@ app.all('*', proxy(upstream, {
         default:
           fileType = 'txt'
       }
-      let path = 'data/timemaps'
+      let path = `data/timemaps/${bufferHash}-timemap.${fileType}`
 
-
-      fs.writeFile(`${path}/${bufferHash}-timemap.${fileType}`, data, 'utf8', err => {
-        if (err) {
-          logger.error(`writting timemap error for hash[${hash}] %s`, err)
-        }
-      })
-
+      if(!fileExists(path)) {
+        console.log("writting")
+        fs.writeFile(path, data, 'utf8', err => {
+          if (err) {
+            logger.error(`writting timemap error for hash[${hash}] %s`, err)
+          }
+        })
+      }
     } else {
       let visiting = S(res.url).startsWith('timegate/') ? 'timegate'  : 'memento'
       logger.info(`got ${visiting} request`,
