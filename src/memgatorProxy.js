@@ -190,18 +190,12 @@ app.all('*', proxy(upstream, {
         default:
           fileType = 'txt'
       }
-      let path = `data/timemaps/${now.format('YYYYMMDD')}`
+      let path = 'data/timemaps'
 
 
-      fs.ensureDir(path, error => {
-        if (error) {
-          logger.error(`ensuring dir timemap error for hash[${hash}] %s`, error)
-        } else {
-          fs.writeFile(`${path}/${bufferHash}-timemap.${fileType}`, data, 'utf8', err => {
-            if (err) {
-              logger.error(`writting timemap error for hash[${hash}] %s`, err)
-            }
-          })
+      fs.writeFile(`${path}/${bufferHash}-timemap.${fileType}`, data, 'utf8', err => {
+        if (err) {
+          logger.error(`writting timemap error for hash[${hash}] %s`, err)
         }
       })
 
