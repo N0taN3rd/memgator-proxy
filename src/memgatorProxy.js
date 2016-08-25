@@ -138,7 +138,7 @@ const pathRE = new RegExp('/timemap/(?:(?:json)|(?:link)|(?:cdxj))/(.+)')
 
 //memgator port 80,
 //'http://localhost:9000'
-const isDebug = true
+const isDebug = false
 let upstream = isDebug ? 'http://localhost:9000' : 'http://memgator.cs.odu.edu:1209'
 let port = 8008
 
